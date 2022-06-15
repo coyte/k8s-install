@@ -1,2 +1,2 @@
-# Photon-k8s
-Script to automate configuration and deployment of k8s on Photon OS VM's
+# K8s-install
+Script to automate configuration and deployment of k8s on Ubuntu Jammy VM's
