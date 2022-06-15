@@ -1,0 +1,33 @@
+tdnf update
+tdnf autoremove docker
+systemctl enable containerd # does this require the config from the script?
+curl -o /etc/pki/rpm-gpg/GOOGLE-RPM-GPG-KEY https://packages.cloud.google.com/yum/doc/rpm-package-key.gpg
+chmod 644 /etc/pki/rpm-gpg/GOOGLE-RPM-GPG-KEY
+rpm --import /etc/pki/rpm-gpg/GOOGLE-RPM-GPG-KEY
+vi /etc/yum.repos.d/kubernetes.repo # don't know anything happended in there
+tdnf install -y kubelet kubeadm kubectl
+crictl
+crictl ps
+WARN[0000] runtime connect using default endpoints: [unix:///var/run/dockershim.sock unix:///run/containerd/containerd.sock unix:///run/crio/crio.sock unix:///var/run/cri-dockerd.sock]. As the default settings are now deprecated, you should set the endpoint instead.
+ERRO[0000] unable to determine runtime API version: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing dial unix /var/run/dockershim.sock: connect: no such file or directory"
+WARN[0000] image connect using default endpoints: [unix:///var/run/dockershim.sock unix:///run/containerd/containerd.sock unix:///run/crio/crio.sock unix:///var/run/cri-dockerd.sock]. As the default settings are now deprecated, you should set the endpoint instead.
+ERRO[0000] unable to determine image API version: rpc error: code = Unavailable desc = connection error: desc = "transport: Error while dialing dial unix /var/run/dockershim.sock: connect: no such file or directory"
+E0614 09:00:52.154926    2860 remote_runtime.go:536] "ListContainers with filter from runtime service failed" err="rpc error: code = Unimplemented desc = unknown service runtime.v1alpha2.RuntimeService" filter="&ContainerFilter{Id:,State:&ContainerStateValue{State:CONTAINER_RUNNING,},PodSandboxId:,LabelSelector:map[string]string{},}"
+FATA[0000] listing containers: rpc error: code = Unimplemented desc = unknown service runtime.v1alpha2.RuntimeService
+
+rm config.toml
+
+modprobe overlay
+modprobe br_netfilter
+
+cat > /etc/modules-load.d/containerd.conf<<EOF
+> overlay
+> br_netfilter
+> EOF
+
+sysctl --system
+
+systemctl restart containerd
+
+kubeadm init --pod-network-cidr=192.168.0.0/16 --dry-run
+

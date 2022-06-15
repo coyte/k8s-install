@@ -1,0 +1,3 @@
+install-master.sh
+install_worker.sh
+env-vars.sh
