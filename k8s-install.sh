@@ -125,6 +125,7 @@ echo "---------------------------------Disable swap-----------------------------
 swapoff -a
 sed -i '/\sswap\s/ s/^\(.*\)$/#\1/g' /etc/fstab
 
+
 echo "---------------------------------Add repositories---------------------------------------------------------------------------------"
 curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add
 apt-add-repository "deb http://apt.kubernetes.io/ kubernetes-xenial main" 
@@ -171,50 +172,44 @@ tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.1.1.tgz
 
 echo "---------------------------------containerd confile file-------------------------------------------------------------------------"
 mkdir -p /etc/containerd
-cat > /etc/containerd/config.toml<<EOF
-version = 2
-
+cat > /etc/containerd/config.toml <<EOF
+disabled_plugins = []
+imports = []
+oom_score = 0
+plugin_dir = ""
+required_plugins = []
 root = "/var/lib/containerd"
 state = "/run/containerd"
-oom_score = 0
-#imports = ["/etc/containerd/runtime_*.toml", "./debug.toml"]
-
-[grpc]
-  address = "/run/containerd/containerd.sock"
-  uid = 0
-  gid = 0
-
-[debug]
-  address = "/run/containerd/debug.sock"
-  uid = 0
-  gid = 0
-  level = "info"
-
-[metrics]
-  address = ""
-  grpc_histogram = false
-
-[cgroup]
-  path = ""
+version = 2
 
 [plugins]
-[plugins."io.containerd.grpc.v1.cri".containerd]
-  default_runtime_name = "crun"
+
   [plugins."io.containerd.grpc.v1.cri".containerd.runtimes]
-    # crun: https://github.com/containers/crun
-    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.crun]
+    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+      base_runtime_spec = ""
+      container_annotations = []
+      pod_annotations = []
+      privileged_without_host_devices = false
+      runtime_engine = ""
+      runtime_root = ""
       runtime_type = "io.containerd.runc.v2"
-      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.crun.options]
-        BinaryName = "/usr/local/bin/crun"
+
+      [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
+        BinaryName = ""
+        CriuImagePath = ""
+        CriuPath = ""
+        CriuWorkPath = ""
+        IoGid = 0
+        IoUid = 0
+        NoNewKeyring = false
+        NoPivotRoot = false
+        Root = ""
+        ShimCgroup = ""
         SystemdCgroup = true
-    # gVisor: https://gvisor.dev/
-    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.gvisor]
-      runtime_type = "io.containerd.runsc.v1"
-    # Kata Containers: https://katacontainers.io/
-    [plugins."io.containerd.grpc.v1.cri".containerd.runtimes.kata]
-      runtime_type = "io.containerd.kata.v2"
 EOF
 
+
+systemctl restart containerd
 
 echo "---------------------------------installing nerdctl--------------------------------------------------------------------------------"
 NERDCTL_VERSION=0.20.0 # see https://github.com/containerd/nerdctl/releases for the latest release
@@ -228,6 +223,19 @@ rm -rf ~/libexec
 echo 'export CNI_PATH=/usr/lib/libexec/cni' >> ~/.bashrc
 source ~/.bashrc
 
+echo "---------------------------------installing crictl--------------------------------------------------------------------------------"
+VERSION="v1.24.1"
+curl -L https://github.com/kubernetes-sigs/cri-tools/releases/download/$VERSION/crictl-${VERSION}-linux-amd64.tar.gz --output crictl-${VERSION}-linux-amd64.tar.gz
+sudo tar zxvf crictl-$VERSION-linux-amd64.tar.gz -C /usr/local/bin
+rm -f crictl-$VERSION-linux-amd64.tar.gz
+echo "---------------------------------crictl config------------------------------------------------------------------------------------"
+### crictl uses containerd as default
+cat > /etc/crictl.yaml<<EOF
+runtime-endpoint: unix:///run/containerd/containerd.sock
+image-endpoint: unix:///run/containerd/containerd.sock
+EOF
+
+
 
 echo "---------------------------------installing podman--------------------------------------------------------------------------------"
 ### install podman
@@ -236,8 +244,8 @@ echo "---------------------------------installing podman------------------------
 
 
 echo "---------------------------------Adding repo--------------------------------------------"
-curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
-echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+#curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+#echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
 DEBIAN_FRONTEND=noninteractive apt-get update
 
 echo "---------------------------------installing  kubelet, kubeadm, kubectl--------------------------------------------"
@@ -248,34 +256,22 @@ echo "---------------------------------source .bashrc---------------------------
 source ~/.bashrc
 
 
-
-echo "---------------------------------crictl config------------------------------------------------------------------------------------"
-### crictl uses containerd as default
-cat > /etc/crictl.yaml<<EOF
-runtime-endpoint: unix:///run/containerd/containerd.sock
-EOF
-
-
 echo "---------------------------------kubelet config-----------------------------------------------------------------------------------"
 ### kubelet should use containerd
-cat > /etc/sysconfig/kubelet<<EOF
+cat > /etc/default/kubelet<<EOF
 KUBELET_EXTRA_ARGS="--container-runtime remote --container-runtime-endpoint unix:///run/containerd/containerd.sock"
 EOF
 
 
 ### start services
 systemctl daemon-reload
-systemctl enable containerd
-systemctl restart containerd
-systemctl enable kubelet && systemctl start kubelet
-
-
-#read -p "ready for kubeadmin, enter to continue"
-
+systemctl enable kubelet
+systemctl start kubelet
 
 ### init k8s
 rm /root/.kube/config || true
 kubeadm config images pull
+
 #read -p "images pulled, now kubeadmin init, enter to continue"
 kubeadm init --skip-token-print --pod-network-cidr=$CLUSTERIPRANGE --control-plane-endpoint=k8s-master.teekens.info
 
@@ -285,7 +281,7 @@ sudo cp -i /etc/kubernetes/admin.conf ~/.kube/config
 
 
 ### CNI
-#kubectl apply -f https://raw.githubusercontent.com/killer-sh/cks-course-environment/master/cluster-setup/calico.yaml
+kubectl apply -f https://raw.githubusercontent.com/killer-sh/cks-course-environment/master/cluster-setup/calico.yaml
 
 
 # etcdctl
