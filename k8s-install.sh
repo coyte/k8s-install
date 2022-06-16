@@ -270,9 +270,16 @@ systemctl start kubelet
 
 ### init k8s
 rm /root/.kube/config || true
-kubeadm config images pull
 
-#read -p "images pulled, now kubeadmin init, enter to continue"
+
+read -p "Worker config complete, N to end, Y to create master node " -n 1 -r
+echo    # (optional) move to a new line
+if [[ ! $REPLY =~ ^[Yy]$ ]]
+then
+    exit 1
+fi
+
+kubeadm config images pull
 kubeadm init --skip-token-print --pod-network-cidr=$CLUSTERIPRANGE --control-plane-endpoint=k8s-master.teekens.info
 
 mkdir -p ~/.kube
@@ -294,4 +301,4 @@ kubectl apply -f https://raw.githubusercontent.com/killer-sh/cks-course-environm
 
 #echo
 #echo "### COMMAND TO ADD A WORKER NODE ###"
-#kubeadm token create --print-join-command --ttl 0
+kubeadm token create --print-join-command --ttl 0
